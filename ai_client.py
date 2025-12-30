@@ -1,17 +1,19 @@
 import logging
 import time
-import requests
 import json
 from typing import Dict, List, Optional, Any
 from config import config
+from google import genai
 
 class AIClient:
-    """Google Gemini AI client using REST API"""
+    """Google Gemini AI client using google-genai library"""
     
     def __init__(self):
         self.api_key = config.api_key
-        self.model = config.get('api.model')
-        self.api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        self.model = "gemini-2.5-flash"  # Use the working model
+        
+        # Initialize google-genai client
+        self.client = genai.Client(api_key=self.api_key)
 
         # Debug API key
         if self.api_key:
@@ -22,7 +24,7 @@ class AIClient:
         if not config.validate_api_key():
             raise ValueError("Invalid or missing API key")
         
-        logging.info(f"AI Client initialized with model: {self.model}")
+        logging.info(f"AI Client initialized with model: {self.model} using google-genai library")
     
     def generate_code(self, command: str, context: Dict[str, Any] = None) -> str:
         """Generate Python code from natural language command with retry and fallback"""
@@ -40,38 +42,16 @@ class AIClient:
                 # Combine system prompt and user command for Gemini
                 full_prompt = f"{system_prompt}\n\nUser command: {command}"
                 
-                # Generate content using Gemini REST API
-                payload = {
-                    "contents": [{
-                        "parts": [{
-                            "text": full_prompt
-                        }]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": 2000,
-                    }
-                }
-                
-                headers = {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": self.api_key
-                }
-                
-                api_response = requests.post(
-                    self.api_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=30
+                # Generate content using google-genai library
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=full_prompt
                 )
                 
-                api_response.raise_for_status()
-                response_data = api_response.json()
-                
                 # Extract text from response
-                if "candidates" in response_data and len(response_data["candidates"]) > 0:
-                    code = response_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                else:
+                code = response.text.strip()
+                
+                if not code:
                     raise ValueError("No content in API response")
                 
                 # Clean up code formatting
@@ -80,43 +60,26 @@ class AIClient:
                 logging.info(f"Generated code for command: {command[:50]}...")
                 return code
                 
-            except requests.exceptions.HTTPError as e:
-                status_code = e.response.status_code if hasattr(e, 'response') else None
+            except Exception as e:
                 error_str = str(e)
+                logging.error(f"Error generating code (attempt {attempt + 1}): {e}")
                 
                 # Check for authentication errors
-                if status_code == 401 or "401" in error_str or "Unauthorized" in error_str or "API_KEY_INVALID" in error_str or "API key not valid" in error_str:
-                    logging.error(f"Authentication error (attempt {attempt + 1}): {e}")
+                if "401" in error_str or "Unauthorized" in error_str or "API_KEY_INVALID" in error_str or "API key not valid" in error_str:
                     logging.error("Please check your GEMINI_API_KEY in .env file")
-                    # Don't retry on auth errors, go straight to fallback
                     logging.warning("Authentication failed, trying fallback method")
                     return self._generate_fallback_code(command, context)
                 
                 # Check for quota/rate limit errors
-                if status_code == 429 or "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower() or "ResourceExhausted" in error_str:
                     logging.error(f"Quota/Rate limit error (attempt {attempt + 1}): {e}")
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        logging.info(f"Rate limited, waiting {delay:.1f} seconds before retry...")
+                        time.sleep(delay)
+                        continue
                     logging.warning("Quota exceeded, trying fallback method")
                     return self._generate_fallback_code(command, context)
-                
-                # Check for bad request (400) - might be model name issue
-                if status_code == 400:
-                    error_detail = ""
-                    try:
-                        if hasattr(e, 'response') and e.response:
-                            error_detail = e.response.text
-                    except:
-                        pass
-                    logging.error(f"Bad request error (attempt {attempt + 1}): {e}")
-                    logging.error(f"Error details: {error_detail}")
-                    # Don't retry on bad requests, likely configuration issue
-                    logging.warning("Bad request, trying fallback method")
-                    return self._generate_fallback_code(command, context)
-                
-                logging.error(f"HTTP error generating code (attempt {attempt + 1}): {e}")
-                
-            except Exception as e:
-                error_str = str(e)
-                logging.error(f"Error generating code (attempt {attempt + 1}): {e}")
                 
                 if attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)  # Exponential backoff
@@ -279,36 +242,14 @@ Respond ONLY with the complete function code, no explanations or markdown format
 """
         
         try:
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": prompt
-                    }]
-                }],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "maxOutputTokens": 1500,
-                }
-            }
-            
-            headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": self.api_key
-            }
-            
-            api_response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=payload,
-                timeout=30
+            # Generate content using google-genai library
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt
             )
             
-            api_response.raise_for_status()
-            response_data = api_response.json()
-            
-            if "candidates" in response_data and len(response_data["candidates"]) > 0:
-                function_code = response_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            else:
+            function_code = response.text.strip()
+            if not function_code:
                 raise ValueError("No content in API response")
             function_code = self._clean_code(function_code)
             
@@ -342,36 +283,14 @@ Respond ONLY with valid JSON, no explanations.
 """
         
         try:
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": prompt
-                    }]
-                }],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "maxOutputTokens": 500,
-                }
-            }
-            
-            headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": self.api_key
-            }
-            
-            api_response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=payload,
-                timeout=30
+            # Generate content using google-genai library
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt
             )
             
-            api_response.raise_for_status()
-            response_data = api_response.json()
-            
-            if "candidates" in response_data and len(response_data["candidates"]) > 0:
-                content = response_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            else:
+            content = response.text.strip()
+            if not content:
                 raise ValueError("No content in API response")
             
             import json
