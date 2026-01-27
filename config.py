@@ -5,25 +5,42 @@ from typing import Dict, Any, Optional
 import logging
 
 def load_env_file(env_path: Path = None):
-    """Load environment variables from .env file"""
-    if env_path is None:
-        env_path = Path(__file__).parent / ".env"
-
-    if env_path.exists():
-        try:
-            with open(env_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip().strip('"').strip("'")
-                        os.environ[key] = value
-            print(f"✅ Loaded environment variables from {env_path}")
-        except Exception as e:
-            print(f"⚠️ Error loading .env file: {e}")
+    """Load environment variables from .env file
+    
+    Priority:
+    1. User's home directory (~/.aura/.env) - preferred, always writable
+    2. Application directory (.env) - for development
+    """
+    paths_to_try = []
+    
+    if env_path:
+        paths_to_try.append(env_path)
     else:
-        print(f"ℹ️ No .env file found at {env_path}")
+        # Try user home directory first (always writable)
+        user_env = Path.home() / ".aura" / ".env"
+        paths_to_try.append(user_env)
+        
+        # Fall back to script directory (for development)
+        script_env = Path(__file__).parent / ".env"
+        paths_to_try.append(script_env)
+    
+    for env_path in paths_to_try:
+        if env_path.exists():
+            try:
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            key = key.strip()
+                            value = value.strip().strip('"').strip("'")
+                            os.environ[key] = value
+                print(f"✅ Loaded environment variables from {env_path}")
+                return
+            except Exception as e:
+                print(f"⚠️ Error loading .env file: {e}")
+    
+    print("ℹ️ No .env file found")
 
 # Load .env file when module is imported
 load_env_file()

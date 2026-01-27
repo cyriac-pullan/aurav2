@@ -84,19 +84,25 @@ except ImportError as e:
 
 # TTS Manager for proper voice output
 try:
-    from tts_manager import get_tts_manager, speak as tts_speak
+    from tts_manager import get_tts_manager, speak as tts_speak, speak_chunked
     TTS_MANAGER_AVAILABLE = True
     print("TTS Manager loaded")
 except ImportError:
     TTS_MANAGER_AVAILABLE = False
     tts_speak = None
+    speak_chunked = None
 
 
 class AuraPersonality:
     """AURA's JARVIS-like personality - witty, helpful, slightly sarcastic"""
     
     def __init__(self):
-        self.user_name = "Sir"  # Can be customized
+        # Load user name from persistent config
+        try:
+            from user_config import get_user_name
+            self.user_name = get_user_name()
+        except ImportError:
+            self.user_name = "User"
         self.mood = "helpful"  # helpful, witty, focused, concerned
         self.interaction_count = 0
         
@@ -1069,13 +1075,17 @@ class SettingsDialog(QWidget):
         self.load_current_key()
         
     def load_current_key(self):
-        """Load current API key from .env file"""
-        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
-        if os.path.exists(env_path):
+        """Load current API key from .env file in user home directory"""
+        from pathlib import Path
+        
+        # Use user home directory (~/.aura/.env)
+        env_path = Path.home() / ".aura" / ".env"
+        
+        if env_path.exists():
             try:
                 with open(env_path, 'r') as f:
                     for line in f:
-                        if line.startswith('GEMINI_API_KEY='):
+                        if line.startswith('GEMINI_API_KEY=') or line.startswith('OPENROUTER_API_KEY='):
                             key = line.split('=', 1)[1].strip()
                             if key and not key.startswith('#'):
                                 # Show masked key
@@ -1097,7 +1107,12 @@ class SettingsDialog(QWidget):
             self.status_label.setStyleSheet("color: #ffd700; font-size: 11px;")
             self.status_label.setText("Warning: Key should start with 'AIza'")
         
-        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+        from pathlib import Path
+        
+        # Use user home directory - always writable
+        config_dir = Path.home() / ".aura"
+        config_dir.mkdir(exist_ok=True)
+        env_path = config_dir / ".env"
         
         try:
             # Read existing content
@@ -1142,7 +1157,12 @@ class SettingsDialog(QWidget):
         self.update_voice_button_styles()
         
         # Save to .env
-        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+        from pathlib import Path
+        
+        # Use user home directory
+        config_dir = Path.home() / ".aura"
+        config_dir.mkdir(exist_ok=True)
+        env_path = config_dir / ".env"
         
         try:
             lines = []
@@ -1248,6 +1268,7 @@ class AuraFloatingWidget(QWidget):
         self.speech_thread = None
         self.is_listening = False
         self.is_collapsed = False
+        self.last_response = ""  # Store last response for display
         
         # AURA v2: Hands-free continuous listening
         self.hands_free_mode = False
@@ -1255,6 +1276,9 @@ class AuraFloatingWidget(QWidget):
         
         # Mini orb widget for collapsed mode
         self.mini_orb_widget = None
+        
+        # Last response text (for UI/history)
+        self.last_response = ""
         
         # Setup UI
         self.init_ui()
@@ -1415,6 +1439,132 @@ class AuraFloatingWidget(QWidget):
             letter-spacing: 2px;
         """)
         container_layout.addWidget(self.status_label)
+        
+        # Response display area (collapsible)
+        self.response_area_visible = False
+        self.response_display = QTextEdit()
+        self.response_display.setReadOnly(True)
+        self.response_display.setMaximumHeight(200)  # Max height when expanded
+        self.response_display.setMinimumHeight(0)
+        self.response_display.hide()  # Hidden by default (minimal mode)
+        self.response_display.setStyleSheet("""
+            QTextEdit {
+                background: rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(0, 212, 255, 0.2);
+                border-radius: 10px;
+                padding: 10px;
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 12px;
+                font-family: 'Segoe UI', Arial;
+                selection-background-color: rgba(0, 212, 255, 0.3);
+            }
+            QTextEdit QScrollBar:vertical {
+                background: rgba(0, 0, 0, 0.3);
+                width: 8px;
+                border-radius: 4px;
+            }
+            QTextEdit QScrollBar::handle:vertical {
+                background: rgba(0, 212, 255, 0.5);
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QTextEdit QScrollBar::handle:vertical:hover {
+                background: rgba(0, 212, 255, 0.7);
+            }
+        """)
+        container_layout.addWidget(self.response_display)
+        
+        # Toggle button for response area (only show when there's content)
+        self.toggle_response_btn = QPushButton("▼ Show Response")
+        self.toggle_response_btn.setFixedHeight(24)
+        self.toggle_response_btn.hide()  # Hidden until there's a response
+        self.toggle_response_btn.clicked.connect(self.toggle_response_area)
+        self.toggle_response_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 212, 255, 0.1);
+                border: 1px solid rgba(0, 212, 255, 0.3);
+                border-radius: 8px;
+                color: rgba(0, 212, 255, 0.8);
+                font-size: 10px;
+                padding: 4px;
+            }
+            QPushButton:hover {
+                background: rgba(0, 212, 255, 0.2);
+                border-color: rgba(0, 212, 255, 0.5);
+            }
+        """)
+        container_layout.addWidget(self.toggle_response_btn)
+        
+        # Conversation history panel (collapsible)
+        self.history_visible = False
+        self.conversation_history = []  # List of {"question": str, "answer": str}
+        
+        # History toggle button
+        self.toggle_history_btn = QPushButton("📜 History (0)")
+        self.toggle_history_btn.setFixedHeight(24)
+        self.toggle_history_btn.clicked.connect(self.toggle_history_panel)
+        self.toggle_history_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(147, 112, 219, 0.1);
+                border: 1px solid rgba(147, 112, 219, 0.3);
+                border-radius: 8px;
+                color: rgba(147, 112, 219, 0.8);
+                font-size: 10px;
+                padding: 4px;
+            }
+            QPushButton:hover {
+                background: rgba(147, 112, 219, 0.2);
+                border-color: rgba(147, 112, 219, 0.5);
+            }
+        """)
+        container_layout.addWidget(self.toggle_history_btn)
+        
+        # History display area
+        self.history_display = QTextEdit()
+        self.history_display.setReadOnly(True)
+        self.history_display.setMaximumHeight(150)
+        self.history_display.hide()
+        self.history_display.setStyleSheet("""
+            QTextEdit {
+                background: rgba(20, 20, 30, 0.5);
+                border: 1px solid rgba(147, 112, 219, 0.2);
+                border-radius: 10px;
+                padding: 8px;
+                color: rgba(255, 255, 255, 0.85);
+                font-size: 11px;
+                font-family: 'Segoe UI', Arial;
+            }
+            QTextEdit QScrollBar:vertical {
+                background: rgba(0, 0, 0, 0.3);
+                width: 6px;
+                border-radius: 3px;
+            }
+            QTextEdit QScrollBar::handle:vertical {
+                background: rgba(147, 112, 219, 0.5);
+                border-radius: 3px;
+            }
+        """)
+        container_layout.addWidget(self.history_display)
+        
+        # Clear history button
+        self.clear_history_btn = QPushButton("🗑️ Clear History")
+        self.clear_history_btn.setFixedHeight(22)
+        self.clear_history_btn.hide()
+        self.clear_history_btn.clicked.connect(self.clear_conversation_history)
+        self.clear_history_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 100, 100, 0.1);
+                border: 1px solid rgba(255, 100, 100, 0.3);
+                border-radius: 6px;
+                color: rgba(255, 150, 150, 0.8);
+                font-size: 9px;
+                padding: 3px 8px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 100, 100, 0.2);
+            }
+        """)
+        container_layout.addWidget(self.clear_history_btn)
         
         container_layout.addSpacing(10)
         
@@ -1679,7 +1829,38 @@ class AuraFloatingWidget(QWidget):
         command = self.input_field.text().strip()
         if not command:
             return
+
+        # Global stop/cancel commands: stop current speech/automation instead of
+        # routing through intent handling.
+        lower_cmd = command.lower()
+        if lower_cmd in ["stop", "cancel", "shut up", "stop talking", "be quiet", "quiet"]:
+            # Stop hands-free mode if active
+            if self.hands_free_mode:
+                self.stop_hands_free_mode()
+
+            # Stop TTS playback (end current speech)
+            if TTS_MANAGER_AVAILABLE:
+                try:
+                    from tts_manager import stop_speaking
+                    stop_speaking()
+                except Exception as e:
+                    print(f"[TTS] Stop error: {e}")
             
+            # Cancel any ongoing processing
+            if self.processing_thread and self.processing_thread.isRunning():
+                self.processing_thread.terminate()
+                self.processing_thread.wait(1000)
+
+            self.set_status("Stopped.", "warning")
+            self.input_field.clear()
+            return
+
+        # Clear previous response display when starting new command
+        self.response_display.clear()
+        self.response_display.hide()
+        self.toggle_response_btn.hide()
+        self.last_response = ""
+
         self.input_field.clear()
         self.context["command_count"] += 1
         
@@ -1700,6 +1881,9 @@ class AuraFloatingWidget(QWidget):
         self.set_status("Processing...", "processing")
         self.orb.set_state("processing")
         
+        # Store command for history tracking
+        self.last_command = command
+        
         # Process in background
         self.processing_thread = ProcessingThread(command, self.context)
         self.processing_thread.finished.connect(self.on_processing_complete)
@@ -1717,15 +1901,140 @@ class AuraFloatingWidget(QWidget):
             self.mini_orb_widget.set_state("idle")
         
         if success:
-            self.set_status("Done", "success")
-            if VOICE_AVAILABLE:
-                self.voice_thread = VoiceThread(self.personality.get_success_response())
-                self.voice_thread.start()
+            # For conversational / Butler responses, speak and print the actual answer
+            # instead of a generic "Done". For other commands, keep the short success cue.
+            if response:
+                print(response)
+                self.last_response = response
+                
+                # Add to conversation history (if this looks like a Q&A)
+                if hasattr(self, 'last_command') and self.last_command:
+                    self.add_to_conversation_history(self.last_command, response)
+                
+                # Display response in UI
+                self.response_display.setPlainText(response)
+                
+                # Show toggle button if response is long enough to warrant display
+                if len(response) > 50:  # Show toggle for substantial responses
+                    self.toggle_response_btn.show()
+                    # Auto-expand if response is very long (Butler mode)
+                    if len(response) > 200:
+                        self.expand_response_area()
+                else:
+                    # Short responses: show inline, hide toggle
+                    self.response_display.setMaximumHeight(60)
+                    self.response_display.show()
+                    self.toggle_response_btn.hide()
+                
+                self.set_status("Done", "success")
+                
+                # Use chunked TTS for long responses (interruptible)
+                if TTS_MANAGER_AVAILABLE:
+                    words = response.split()
+                    if len(words) > 30 and speak_chunked:  # Long response
+                        speak_chunked(response)
+                    elif tts_speak:  # Short response
+                        tts_speak(response)
+            else:
+                self.set_status("Done", "success")
+                if TTS_MANAGER_AVAILABLE and tts_speak:
+                    tts_speak(self.personality.get_success_response())
         else:
             self.set_status("Error", "error")
+            # Show error in response area
+            error_msg = response if response else "An error occurred."
+            self.response_display.setPlainText(f"❌ Error: {error_msg}")
+            self.response_display.setMaximumHeight(80)
+            self.response_display.show()
+            self.toggle_response_btn.hide()
         
         # Reset status after delay
         QTimer.singleShot(3000, lambda: self.set_status("Ready", "normal"))
+    
+    def toggle_response_area(self):
+        """Toggle response display area visibility"""
+        if self.response_area_visible:
+            self.collapse_response_area()
+        else:
+            self.expand_response_area()
+    
+    def expand_response_area(self):
+        """Expand response display area"""
+        self.response_area_visible = True
+        self.response_display.setMaximumHeight(200)
+        self.response_display.show()
+        self.toggle_response_btn.setText("▲ Hide Response")
+        # Scroll to top
+        self.response_display.verticalScrollBar().setValue(0)
+    
+    def collapse_response_area(self):
+        """Collapse response display area"""
+        self.response_area_visible = False
+        self.response_display.hide()
+        self.toggle_response_btn.setText("▼ Show Response")
+    
+    def toggle_history_panel(self):
+        """Toggle conversation history panel"""
+        if self.history_visible:
+            self.history_display.hide()
+            self.clear_history_btn.hide()
+            self.history_visible = False
+            self.toggle_history_btn.setText(f"📜 History ({len(self.conversation_history)})")
+        else:
+            self.update_history_display()
+            self.history_display.show()
+            self.clear_history_btn.show()
+            self.history_visible = True
+            self.toggle_history_btn.setText(f"▲ Hide History ({len(self.conversation_history)})")
+    
+    def update_history_display(self):
+        """Update the history display with recent Q&A pairs"""
+        if not self.conversation_history:
+            self.history_display.setPlainText("No conversation history yet.")
+            return
+        
+        # Build formatted history (newest first)
+        history_text = ""
+        for i, entry in enumerate(reversed(self.conversation_history[-10:]), 1):  # Last 10
+            q = entry.get("question", "")[:50] + ("..." if len(entry.get("question", "")) > 50 else "")
+            a = entry.get("answer", "")[:100] + ("..." if len(entry.get("answer", "")) > 100 else "")
+            history_text += f"▸ Q: {q}\n  A: {a}\n\n"
+        
+        self.history_display.setPlainText(history_text.strip())
+        self.history_display.verticalScrollBar().setValue(0)
+    
+    def add_to_conversation_history(self, question: str, answer: str):
+        """Add a Q&A pair to the conversation history"""
+        self.conversation_history.append({
+            "question": question,
+            "answer": answer
+        })
+        # Keep only last 20 entries
+        if len(self.conversation_history) > 20:
+            self.conversation_history = self.conversation_history[-20:]
+        
+        # Update button text
+        self.toggle_history_btn.setText(
+            f"▲ Hide History ({len(self.conversation_history)})" if self.history_visible 
+            else f"📜 History ({len(self.conversation_history)})"
+        )
+        
+        # Update display if visible
+        if self.history_visible:
+            self.update_history_display()
+    
+    def clear_conversation_history(self):
+        """Clear all conversation history"""
+        self.conversation_history = []
+        self.history_display.setPlainText("History cleared.")
+        self.toggle_history_btn.setText("📜 History (0)")
+        
+        # Also clear the AURA bridge conversation history
+        try:
+            from aura_v2_bridge import aura_bridge
+            aura_bridge.clear_conversation_history()
+        except Exception as e:
+            print(f"[History] Could not clear bridge history: {e}")
     
     def toggle_voice_input(self):
         """Toggle voice input - start/stop listening"""
@@ -1943,12 +2252,15 @@ def main():
         print("❌ PyQt5 is required for the floating widget.")
         print("   Install with: pip install PyQt5")
         return 1
-        
+    
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     
     font = QFont("Segoe UI", 10)
     app.setFont(font)
+    
+    # API key setup is handled via Settings dialog (click orb)
+    # Key is stored in ~/.aura/.env
     
     widget = AuraFloatingWidget()
     widget.show()

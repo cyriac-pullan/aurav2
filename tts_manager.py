@@ -49,6 +49,8 @@ class TTSManager:
         self._running = True
         self._thread = None
         self._ready = threading.Event()
+        self._current_speaker = None  # Track current speaker for interruption
+        self._should_stop = False  # Flag to stop current speech
         
         if TTS_AVAILABLE:
             self._start_engine_thread()
@@ -124,16 +126,39 @@ class TTSManager:
                 if text is None:
                     break
                 
+                # Check if we should stop before speaking
+                if self._should_stop:
+                    self._should_stop = False
+                    # Clear queue of pending messages
+                    try:
+                        while True:
+                            self._queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    continue
+                
                 if text and text.strip():
                     print(f"[TTS] Speaking: {text[:40]}...")
+                    self._current_speaker = speaker  # Track for interruption
                     try:
                         if use_sapi:
-                            speaker.Speak(text)
+                            # SAPI supports interruption via Skip() method
+                            speaker.Speak(text, 1)  # 1 = async flag for SAPI
+                            # Wait for completion or stop signal
+                            while speaker.Status.RunningState != 1:  # 1 = done
+                                if self._should_stop:
+                                    speaker.Skip("Sentence", 999)  # Skip remaining
+                                    break
+                                time.sleep(0.1)
                         else:
-                            speaker.say(text)
-                            speaker.runAndWait()
+                            # For pyttsx3, we can't easily interrupt, but we can stop the engine
+                            if not self._should_stop:
+                                speaker.say(text)
+                                speaker.runAndWait()
                     except Exception as e:
                         print(f"[TTS] Speak error: {e}")
+                    finally:
+                        self._current_speaker = None
                     
             except queue.Empty:
                 continue
@@ -158,9 +183,21 @@ class TTSManager:
         if TTS_AVAILABLE and text and text.strip():
             self._queue.put(text)
     
+    def stop_speaking(self):
+        """Stop current speech immediately"""
+        self._should_stop = True
+        if self._current_speaker:
+            try:
+                # Try to interrupt SAPI
+                if hasattr(self._current_speaker, 'Skip'):
+                    self._current_speaker.Skip("Sentence", 999)
+            except:
+                pass
+    
     def stop(self):
         """Stop the TTS engine"""
         self._running = False
+        self._should_stop = True
         self._queue.put(None)
         if self._thread:
             self._thread.join(timeout=2.0)
@@ -182,6 +219,63 @@ def speak(text: str):
     if text:
         print(f"[TTS] speak() called: {text[:30]}...")
     get_tts_manager().speak(text)
+
+def stop_speaking():
+    """Stop current TTS playback immediately"""
+    get_tts_manager().stop_speaking()
+
+
+def speak_chunked(text: str, max_chunk_words: int = 50):
+    """
+    Speak text in manageable chunks for interruptibility.
+    Splits by sentences, then by word count if sentences are too long.
+    
+    Args:
+        text: The text to speak
+        max_chunk_words: Maximum words per chunk (default 50 ~15-20 seconds)
+    """
+    if not text:
+        return
+    
+    import re
+    tts = get_tts_manager()
+    
+    # Split by sentence-ending punctuation
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    
+    current_chunk = []
+    current_word_count = 0
+    
+    for sentence in sentences:
+        words = sentence.split()
+        
+        # If single sentence is too long, split it
+        if len(words) > max_chunk_words:
+            # Speak current chunk first
+            if current_chunk:
+                tts.speak(' '.join(current_chunk))
+                current_chunk = []
+                current_word_count = 0
+            
+            # Split long sentence into smaller parts
+            for i in range(0, len(words), max_chunk_words):
+                chunk_words = words[i:i + max_chunk_words]
+                tts.speak(' '.join(chunk_words))
+        else:
+            # Add sentence to current chunk
+            if current_word_count + len(words) > max_chunk_words:
+                # Speak current chunk and start new one
+                if current_chunk:
+                    tts.speak(' '.join(current_chunk))
+                current_chunk = [sentence]
+                current_word_count = len(words)
+            else:
+                current_chunk.append(sentence)
+                current_word_count += len(words)
+    
+    # Speak remaining chunk
+    if current_chunk:
+        tts.speak(' '.join(current_chunk))
 
 
 # Auto-initialize on import

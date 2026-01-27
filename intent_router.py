@@ -45,12 +45,36 @@ class IntentRouter:
     # CONVERSATION TRIGGERS - Commands that should go to Gemini chat mode
     # ═══════════════════════════════════════════════════════════════════════════
     CONVERSATION_TRIGGERS = [
+        # Questions
         "what is", "what's", "who is", "who's", "why", "how does", "how do",
-        "explain", "tell me about", "can you", "could you", "would you",
-        "what do you think", "your opinion", "help me understand",
         "what are", "when did", "when was", "where is", "where are",
-        "describe", "definition of", "meaning of", "how to",
-        "do you know", "have you heard", "teach me"
+        "which", "whose",
+        
+        # Information requests
+        "explain", "tell me about", "tell me", "describe", "definition of", 
+        "meaning of", "info about", "information about",
+        
+        # Polite requests
+        "can you", "could you", "would you", "please tell me",
+        "i want to know", "i'd like to know",
+        
+        # Questions about knowledge
+        "do you know", "have you heard", "are you aware",
+        
+        # Learning/Teaching
+        "teach me", "show me how", "how to", "help me understand",
+        
+        # Opinions/Discussion
+        "what do you think", "your opinion", "your thoughts on",
+        
+        # Search-like (but conversational)
+        "about", "regarding", "concerning",
+        
+        # Comparative
+        "difference between", "compare", "versus", "vs",
+        
+        # General conversation
+        "chat", "talk about", "discuss",
     ]
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -438,6 +462,29 @@ class IntentRouter:
             ],
             "extractor": lambda m: {"folder_name": m.group(1).strip()}
         },
+        "create_file": {
+            "keywords": ["create file", "make file", "new file", "create text file", "make text file"],
+            "patterns": [
+                r"(?:create|make|new)\s+(?:a\s+)?(?:text\s+)?file\s+(?:named|called)?\s*(.+?)\s+(?:in|on|at)\s+(.+?)(?:\s+(?:and\s+)?(?:inside\s+)?(?:write|with|containing|content)\s+(.+))?$",
+                r"(?:create|make|new)\s+(?:a\s+)?(?:text\s+)?file\s+(?:named|called)?\s*(.+)",
+            ],
+            "extractor": lambda m: {
+                "file_name": m.group(1).strip() if m.lastindex >= 1 and m.group(1) else "new_file.txt",
+                "location": m.group(2).strip() if m.lastindex >= 2 and m.group(2) else "",
+                "content": m.group(3).strip() if m.lastindex >= 3 and m.group(3) else ""
+            }
+        },
+        "create_app": {
+            "keywords": ["create app", "make app", "build app", "create application", "make an app", "build an app",
+                        "create a calculator", "make a calculator", "create a notepad", "make a notepad",
+                        "create a todo", "make a todo", "build a program"],
+            "patterns": [
+                r"(?:create|make|build|generate)\s+(?:a\s+|an\s+)?(?:simple\s+|basic\s+)?(.+?)\s+(?:app|application|program)(?:\s+.*)?$",
+                r"(?:create|make|build|generate)\s+(?:a\s+|an\s+)?(?:app|application|program)\s+(?:for\s+|that\s+)?(.+)",
+                r"(?:create|make|build)\s+(?:a\s+|an\s+)?(?:simple\s+|basic\s+)?(calculator|notepad|todo|stopwatch|timer|clock|converter|game)",
+            ],
+            "extractor": lambda m: {"description": m.group(1).strip() if m.lastindex >= 1 and m.group(1) else "simple utility app"}
+        },
         
         # ───────────────────────────────────────────────────────────────────────
         # NOTES
@@ -450,6 +497,24 @@ class IntentRouter:
                 r"remember\s+(?:this\s*:|that\s*)?\s*(.+)",
             ],
             "extractor": lambda m: {"content": m.group(1).strip()}
+        },
+        
+        # ───────────────────────────────────────────────────────────────────────
+        # EMAIL DRAFTING
+        # ───────────────────────────────────────────────────────────────────────
+        "draft_email": {
+            "keywords": ["draft email", "write email", "compose email", "email about", 
+                        "send email", "draft an email", "write an email"],
+            "patterns": [
+                r"(?:draft|write|compose|create)\s+(?:an?\s+)?email\s+(?:to\s+)?(?:my\s+)?(\w+)?\s*(?:about|for|regarding|to)?\s*(.+)",
+                r"(?:draft|write|compose)\s+(?:an?\s+)?email\s+(.+)",
+                r"email\s+(?:my\s+)?(\w+)\s+(?:about|for|regarding)\s+(.+)",
+                r"send\s+(?:an?\s+)?email\s+(?:to\s+)?(?:my\s+)?(\w+)?\s*(?:about|for)?\s*(.+)",
+            ],
+            "extractor": lambda m: {
+                "recipient": m.group(1).strip() if m.lastindex >= 1 and m.group(1) else "",
+                "instruction": m.group(2).strip() if m.lastindex >= 2 and m.group(2) else m.group(1).strip() if m.group(1) else ""
+            }
         },
         
         # ───────────────────────────────────────────────────────────────────────

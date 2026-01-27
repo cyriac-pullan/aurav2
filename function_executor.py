@@ -191,6 +191,8 @@ class FunctionExecutor:
                 "slack": ("slack", False),
                 "vlc": ("vlc", False),
                 "zoom": ("zoom", False),
+                "yt": ("https://www.youtube.com", False),
+                "youtube": ("https://www.youtube.com", False),
             }
             
             app_info = app_map.get(app_name, (app_name, False))
@@ -619,6 +621,101 @@ class FunctionExecutor:
                     return False
             
             return create_folder, {}
+        
+        if function_name == "create_file":
+            import os
+            file_name = args.get("file_name", "new_file.txt")
+            content = args.get("content", "")
+            location = args.get("location", "")
+            
+            def create_file():
+                try:
+                    # Determine the file path
+                    if location:
+                        # Handle drive letters like "D:" or "D drive"
+                        loc = location.lower().replace(" drive", "").replace("drive ", "").strip()
+                        if len(loc) == 1 and loc.isalpha():
+                            base_path = f"{loc.upper()}:\\"
+                        elif loc.endswith(":"):
+                            base_path = loc.upper() + "\\"
+                        else:
+                            base_path = location
+                    else:
+                        # Default to Desktop
+                        base_path = os.path.join(os.path.expanduser("~"), "Desktop")
+                    
+                    # Ensure file has extension
+                    if not "." in file_name:
+                        file_name_with_ext = file_name + ".txt"
+                    else:
+                        file_name_with_ext = file_name
+                    
+                    file_path = os.path.join(base_path, file_name_with_ext)
+                    
+                    # Create the file
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    
+                    print(f"Created file: {file_path}")
+                    return True
+                except Exception as e:
+                    logging.error(f"Failed to create file: {e}")
+                    print(f"Error creating file: {e}")
+                    return False
+            
+            return create_file, {}
+        
+        # ═══════════════════════════════════════════════════════════════════════
+        # AGENTIC APP CREATOR - Autonomous code generation with error-fix loop
+        # ═══════════════════════════════════════════════════════════════════════
+        if function_name == "create_app":
+            description = args.get("description", "simple utility app")
+            
+            def create_app():
+                try:
+                    from app_creator import create_app as ac_create
+                    success, message, file_path = ac_create(description)
+                    print(f"[AppCreator] {message}")
+                    return success
+                except ImportError as e:
+                    logging.error(f"App creator not available: {e}")
+                    print("App creator module not found.")
+                    return False
+                except Exception as e:
+                    logging.error(f"App creation failed: {e}")
+                    print(f"Failed to create app: {e}")
+                    return False
+            
+            return create_app, {}
+        
+        # ═══════════════════════════════════════════════════════════════════════
+        # EMAIL ASSISTANT - AI-powered email drafting
+        # ═══════════════════════════════════════════════════════════════════════
+        if function_name == "draft_email":
+            instruction = args.get("instruction", "")
+            recipient = args.get("recipient", "")
+            
+            def draft_email_func():
+                try:
+                    from email_assistant import draft_email
+                    success, message = draft_email(
+                        instruction=instruction,
+                        recipient=recipient,
+                        tone="professional",
+                        action="clipboard"  # Copy to clipboard by default
+                    )
+                    print(f"[Email] {message}")
+                    return success
+                except ImportError as e:
+                    logging.error(f"Email assistant not available: {e}")
+                    print("Email assistant module not found.")
+                    return False
+                except Exception as e:
+                    logging.error(f"Email draft failed: {e}")
+                    print(f"Failed to draft email: {e}")
+                    return False
+            
+            return draft_email_func, {}
         
         # ═══════════════════════════════════════════════════════════════════════
         # POWERPOINT

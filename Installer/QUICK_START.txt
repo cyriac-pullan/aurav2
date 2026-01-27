@@ -1,0 +1,62 @@
+=====================================================
+           AURA - Quick Start Guide
+        Advanced Universal Response Agent
+=====================================================
+
+FIRST TIME SETUP
+----------------
+1. Run AURA.exe
+2. Follow the API Key Setup Wizard
+3. Start using voice or text commands!
+
+
+GETTING AN API KEY (Free)
+-------------------------
+You need an API key to use AURA's AI features.
+
+Option A: OpenRouter (Recommended)
+  1. Go to: https://openrouter.ai
+  2. Click "Sign Up" (use Google/GitHub for quick signup)
+  3. You get $5 free credit automatically!
+  4. Go to Settings > API Keys > Create Key
+  5. Copy the key starting with "sk-or-v1-..."
+
+Option B: Google AI Studio (Free Tier)
+  1. Go to: https://aistudio.google.com
+  2. Sign in with Google account
+  3. Click "Get API Key" > "Create API Key"
+  4. Copy the key
+
+
+BASIC COMMANDS
+--------------
+  "Open Chrome"          - Launch applications
+  "What time is it?"     - Get current time
+  "Search for weather"   - Web search
+  "Mute volume"          - System controls
+  "Take a screenshot"    - Capture screen
+
+
+TROUBLESHOOTING
+---------------
+Nothing happens when I speak:
+  - Make sure your microphone is connected
+  - Check Windows microphone permissions
+
+"No API key found":
+  - Run the API Key Wizard from the settings menu
+  - Or create a .env file with: OPENROUTER_API_KEY=your_key
+
+App won't start:
+  - Make sure AURA.exe and _internal folder are together
+  - Try running as Administrator
+
+
+SUPPORT
+-------
+GitHub: https://github.com/yourusername/aura
+Email:  support@example.com
+
+=====================================================
+             Enjoy your AI assistant!
+=====================================================

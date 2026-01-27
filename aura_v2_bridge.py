@@ -38,6 +38,10 @@ class AuraV2Bridge:
         # Gemini client (lazy load)
         self._ai_client = None
         
+        # Conversation memory for butler mode
+        self.conversation_history = []
+        self.max_history = 20  # Keep last 20 exchanges
+        
         # Stats
         self.stats = {
             "local_commands": 0,
@@ -47,7 +51,7 @@ class AuraV2Bridge:
             "tokens_saved": 0,
         }
         
-        logging.info("AuraV2Bridge initialized")
+        logging.info("AuraV2Bridge initialized with conversational butler mode")
     
     @property
     def ai_client(self):
@@ -176,31 +180,98 @@ class AuraV2Bridge:
             return self.response_gen.failure(), False, True
     
     def _handle_conversation(self, message: str) -> Tuple[str, bool, bool]:
-        """Handle conversational message"""
-        logging.info(f"CONVERSATION: {message}")
+        """Handle conversational message with memory and butler personality"""
+        logging.info(f"BUTLER CONVERSATION: {message}")
         
         if not self.ai_client:
-            return "I'm having trouble connecting right now.", False, False
+            return "I apologize, but I'm experiencing connectivity difficulties at the moment, sir.", False, False
         
         try:
-            prompt = f"""You are Aura, a helpful AI assistant. Be concise.
+            # Add user message to history
+            self.conversation_history.append({"role": "user", "content": message})
             
-User: {message}"""
+            # Keep only recent history
+            if len(self.conversation_history) > self.max_history:
+                self.conversation_history = self.conversation_history[-self.max_history:]
             
+            # Build conversation context
+            conversation_context = "\n".join([
+                f"{'User' if msg['role'] == 'user' else 'AURA'}: {msg['content']}"
+                for msg in self.conversation_history[-10:]  # Last 10 messages for context
+            ])
+            
+            # Detect user intent for response length
+            brief_keywords = ["briefly", "short", "quick", "tl;dr", "in a nutshell", "summarize", "one sentence", "keep it short"]
+            detailed_keywords = ["in detail", "detailed", "explain fully", "elaborate", "comprehensive", "thorough", "tell me everything"]
+            
+            wants_brief = any(kw in message.lower() for kw in brief_keywords)
+            wants_detailed = any(kw in message.lower() for kw in detailed_keywords)
+            
+            length_instruction = ""
+            if wants_brief:
+                length_instruction = "\n\nRESPONSE LENGTH: User wants a BRIEF answer. Keep it to 1-3 sentences maximum. Be concise."
+            elif wants_detailed:
+                length_instruction = "\n\nRESPONSE LENGTH: User wants a DETAILED answer. Provide comprehensive information with examples if relevant."
+            else:
+                length_instruction = "\n\nRESPONSE LENGTH: Provide a balanced response - informative but not overly long. 3-5 sentences for simple questions, more for complex topics."
+            
+            # Enhanced butler personality prompt
+            prompt = f"""You are AURA, an sophisticated AI butler assistant with these characteristics:
+
+PERSONALITY:
+- Polite, refined, and attentive like a traditional British butler
+- Warm and engaging, making conversation feel natural
+- Knowledgeable and well-informed across many topics
+- Proactive in offering help and suggestions
+- Uses phrases like "Certainly, sir/madam", "I'd be delighted to assist"
+- Remembers context from previous messages in the conversation
+
+CONVERSATION STYLE:
+- Be conversational and engaging, not robotic
+- Provide detailed, informative responses when appropriate
+- Ask follow-up questions to continue the dialogue when relevant
+- Show genuine interest in the user's inquiries
+- Use natural language, avoid being too formal or stiff
+{length_instruction}
+
+MEMORY & CONTEXT:
+You remember this conversation:
+{conversation_context}
+
+Current user message: {message}
+
+Respond as AURA, the helpful AI butler. Be informative, engaging, and conversational. Remember what was discussed before."""
+
+            # Use the same google-genai client pattern as the main AI client.
+            # Note: current client API does not accept generation_config here,
+            # so we rely on the model's defaults for now.
             response = self.ai_client.client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=self.ai_client.model,
                 contents=prompt,
-                generation_config={
-                    "max_output_tokens": 150,
-                    "temperature": 0.7,
-                }
             )
             
-            return response.text.strip(), True, True
+            response_text = response.text.strip()
+            
+            # Truncate very long responses for better UX (keep first 500 words)
+            words = response_text.split()
+            if len(words) > 500:
+                truncated = ' '.join(words[:500]) + "\n\n[Response truncated - full answer available in conversation history]"
+                logging.info(f"BUTLER RESPONSE (truncated from {len(words)} words): {truncated[:160]}...")
+            else:
+                logging.info(f"BUTLER RESPONSE: {response_text[:160]}{'...' if len(response_text) > 160 else ''}")
+            
+            # Store full response in history, but return truncated version for display
+            full_response = response_text
+            display_response = truncated if len(words) > 500 else response_text
+            
+            # Add assistant response to history (full version)
+            self.conversation_history.append({"role": "assistant", "content": full_response})
+            
+            return display_response, True, True
             
         except Exception as e:
             logging.error(f"Conversation error: {e}")
-            return "I'm having trouble with that right now.", False, True
+            return "I apologize, but I'm experiencing a momentary difficulty. Could you please repeat that?", False, True
     
     def get_acknowledgment(self) -> str:
         """Get a wake word acknowledgment"""
@@ -232,6 +303,15 @@ User: {message}"""
     def extract_command(self, text: str) -> str:
         """Extract command after wake word"""
         return extract_command_after_wake(text)
+    
+    def clear_conversation_history(self) -> None:
+        """Clear conversation memory - useful for starting fresh"""
+        self.conversation_history = []
+        logging.info("Conversation history cleared")
+    
+    def get_conversation_length(self) -> int:
+        """Get number of messages in conversation history"""
+        return len(self.conversation_history)
 
 
 # Global bridge instance

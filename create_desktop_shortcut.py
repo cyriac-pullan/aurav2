@@ -1,68 +1,58 @@
-#!/usr/bin/env python3
 """
-Simple Desktop AI Assistant Creator
+Create Desktop Shortcut for AURA Floating Widget
 """
 
 import os
-import subprocess
+import sys
 from pathlib import Path
+import winshell
+from win32com.client import Dispatch
 
-def create_desktop_ai():
-    """Create desktop AI assistant"""
-    
-    # Get desktop path
-    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Create the launcher batch file
-    batch_content = f'''@echo off
-title AI Assistant - AURA
-color 0B
-mode con: cols=100 lines=30
-
-echo.
-echo     ╔══════════════════════════════════════════════════════════════════════════╗
-echo     ║                          AI ASSISTANT AURA                              ║
-echo     ║                            Ready to Assist                              ║
-echo     ╚══════════════════════════════════════════════════════════════════════════╝
-echo.
-echo     [AURA] Hello! Initializing AI Assistant...
-timeout /t 1 /nobreak >nul
-echo.
-
-cd /d "{current_dir}"
-python aura_gui.py
-
-echo.
-echo     [AURA] Session ended. Have a great day!
-timeout /t 2 /nobreak >nul
-'''
-    
-    # Save to desktop
-    batch_file = os.path.join(desktop, "AI Assistant.bat")
-    
+def create_shortcut():
+    """Create a desktop shortcut for AURA"""
     try:
-        with open(batch_file, 'w', encoding='utf-8') as f:
-            f.write(batch_content)
+        # Get paths
+        desktop = Path(winshell.desktop())
+        script_dir = Path(__file__).parent.absolute()
         
-        print(f"✅ AI Assistant created on desktop!")
-        print(f"📍 Location: {batch_file}")
-        print()
-        print("🚀 Double-click 'AI Assistant.bat' on your desktop to launch!")
-        print()
-        print("✨ Features:")
-        print("   • Cortana-style interface")
-        print("   • Professional blue-green styling")
-        print("   • One-click desktop launch")
-        print("   • Enhanced visual experience")
+        # Python executable in venv
+        python_exe = script_dir / "venv" / "Scripts" / "pythonw.exe"
+        if not python_exe.exists():
+            python_exe = script_dir / "venv" / "Scripts" / "python.exe"
         
+        # Target script
+        widget_script = script_dir / "aura_floating_widget" / "aura_widget.py"
+        
+        # Shortcut path
+        shortcut_path = desktop / "AURA Assistant.lnk"
+        
+        # Create shortcut
+        shell = Dispatch('WScript.Shell')
+        shortcut = shell.CreateShortCut(str(shortcut_path))
+        shortcut.TargetPath = str(python_exe)
+        shortcut.Arguments = f'"{widget_script}"'
+        shortcut.WorkingDirectory = str(script_dir)
+        shortcut.IconLocation = str(python_exe)
+        shortcut.Description = "AURA - AI Voice Assistant"
+        shortcut.save()
+        
+        print(f"✅ Desktop shortcut created: {shortcut_path}")
         return True
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Failed to create shortcut: {e}")
+        print(f"   You can manually run: {script_dir}\\run_widget.bat")
         return False
 
 if __name__ == "__main__":
-    print("🤖 Creating your Desktop AI Assistant...")
-    print()
-    create_desktop_ai()
+    # Try to install winshell if not available
+    try:
+        import winshell
+    except ImportError:
+        print("Installing winshell...")
+        import subprocess
+        subprocess.run([sys.executable, "-m", "pip", "install", "winshell", "pywin32"], 
+                      capture_output=True)
+        import winshell
+    
+    create_shortcut()
