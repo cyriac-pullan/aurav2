@@ -1,22 +1,36 @@
-requests>=2.31.0
-SpeechRecognition>=3.10.0
-pyttsx3>=2.90
-pyautogui>=0.9.54
-Pillow>=9.0.0
-pywin32>=306
-screen-brightness-control>=0.21.0
-wmi>=1.5.1
-comtypes>=1.1.14
-pycaw>=20230407
-google-generativeai>=0.8.0
-google-genai>=0.2.0
+# Core HTTP & API
+requests>=2.32.4
+urllib3>=2.5.0
 
-# AURA v2 Dependencies
-rapidfuzz>=3.0.0           # Fuzzy string matching for intent routing
-PyQt5>=5.15.0              # Widget UI
-supermemory>=0.2.0         # Long-term memory + skill sharing
+# Voice input/output
+SpeechRecognition>=3.14.3
+pyttsx3>=2.99
+PyAudio>=0.2.14
+
+# UI & automation
+PyQt5>=5.15.11
+pyautogui>=0.9.54
+Pillow>=11.3.0
+pyperclip>=1.9.0
+
+# Windows system
+pywin32>=311
+screen-brightness-control>=0.24.2
+wmi>=1.5.1
+comtypes>=1.4.11
+pycaw>=20240210
+
+# Google AI (Gemini)
+google-genai>=1.56.0
+
+# AURA routing & widget
+rapidfuzz>=3.14.3
+keyring>=25.7.0
+python-dotenv>=1.1.1
+
+# Long-term memory (optional)
+supermemory>=3.20.0
 
 # Optional: Offline voice (install manually if needed)
-# vosk>=0.3.45             # Offline speech recognition
-# openwakeword>=0.5.0      # Offline wake word detection
-# pyaudio>=0.2.14          # Audio input
+# vosk>=0.3.45
+# openwakeword>=0.5.0
