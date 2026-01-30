@@ -33,8 +33,7 @@ Thumbs.db
 desktop.ini
 
 # Env files
-.env
-*.env
+
 
 # Test files
 *.pptx
@@ -52,4 +51,5 @@ logs/
 *.tmp
 *.temp
 ~$*
+
 .env

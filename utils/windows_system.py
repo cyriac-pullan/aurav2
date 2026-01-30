@@ -1,3 +1,8 @@
+# =============================================================================
+# SINGLE OS BOUNDARY
+# No other module may call Windows APIs directly.
+# =============================================================================
+
 import winreg
 import os
 import ctypes
@@ -13,6 +18,10 @@ SPIF_SENDWININICHANGE = 2
 
 # ========================
 # CORE SYSTEM FUNCTIONS
+# ========================
+# ARCHITECTURAL LAW: THIS IS THE SINGLE SOURCE OF TRUTH (SSOT) FOR OS ACTIONS.
+# DO NOT DUPLICATE THESE FUNCTIONS IN TOOLS OR AGENTS.
+# ALL TOOLS MUST IMPORT FROM HERE.
 # ========================
 
 def show_desktop_icons() -> bool:
@@ -91,6 +100,12 @@ def get_current_volume() -> int:
     except Exception as e:
         print(f"Error getting volume: {e}")
         return 0
+
+
+def get_system_volume() -> int:
+    """Alias for get_current_volume (used by V2 outside_bridge)."""
+    return get_current_volume()
+
 
 def set_system_volume(level: int) -> bool:
     """Sets system volume (0-100) using pycaw."""
@@ -3476,3 +3491,300 @@ def list_available_functions() -> dict:
             }
 
     return functions
+
+# ========================
+# WEB AND MEDIA FUNCTIONS (Migrated from FunctionExecutor)
+# ========================
+
+def open_website(url: str) -> bool:
+    """Opens a website in the default browser."""
+    import webbrowser
+    try:
+        if not url.startswith("http"):
+            url = "https://" + url
+        webbrowser.open(url)
+        print(f"Opening website: {url}")
+        return True
+    except Exception as e:
+        print(f"Error opening website: {e}")
+        return False
+
+def google_search(query: str) -> bool:
+    """Performs a Google search."""
+    import webbrowser
+    import urllib.parse
+    try:
+        if query:
+            url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+        else:
+            url = "https://www.google.com"
+        webbrowser.open(url)
+        print(f"Searching Google for: {query}")
+        return True
+    except Exception as e:
+        print(f"Error searching Google: {e}")
+        return False
+
+def play_youtube(query: str = "") -> bool:
+    """Opens YouTube, optionally searching for a query."""
+    import webbrowser
+    import urllib.parse
+    try:
+        if query:
+            url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
+        else:
+            url = "https://www.youtube.com"
+        webbrowser.open(url)
+        print(f"Opening YouTube: {query if query else 'Home'}")
+        return True
+    except Exception as e:
+        print(f"Error opening YouTube: {e}")
+        return False
+
+def play_spotify(query: str = "") -> bool:
+    """Opens Spotify (App or Web), optionally searching."""
+    import webbrowser
+    import urllib.parse
+    import subprocess
+    try:
+        # Try app first
+        try:
+            subprocess.Popen("spotify", shell=True)
+            if query:
+                # Also open web search as backup/complement
+                url = f"https://open.spotify.com/search/{urllib.parse.quote(query)}"
+                webbrowser.open(url)
+            print(f"Opening Spotify: {query if query else 'Home'}")
+            return True
+        except:
+            # Web fallback
+            url = f"https://open.spotify.com/search/{urllib.parse.quote(query)}" if query else "https://open.spotify.com"
+            webbrowser.open(url)
+            print(f"Opening Spotify Web: {query}")
+            return True
+    except Exception as e:
+        print(f"Error opening Spotify: {e}")
+        return False
+
+def media_control(action: str) -> bool:
+    """Controls media playback (play_pause, next, previous)."""
+    import ctypes
+    try:
+        # Virtual Key Codes
+        keys = {
+            "play_pause": 0xB3,
+            "next": 0xB0,
+            "previous": 0xB1
+        }
+        
+        vk_code = keys.get(action)
+        if not vk_code:
+            print(f"Unknown media action: {action}")
+            return False
+            
+        ctypes.windll.user32.keybd_event(vk_code, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(vk_code, 0, 2, 0)
+        print(f"Media action: {action}")
+        return True
+    except Exception as e:
+        print(f"Error checking media control: {e}")
+        return False
+
+# ========================
+# UTILITY FUNCTIONS
+# ========================
+
+def create_file(file_name: str, content: str = "", location: str = "") -> bool:
+    """Creates a file with content at a specified location (default: Desktop)."""
+    import os
+    try:
+        # Determine base path
+        if location:
+            loc = location.lower().replace(" drive", "").replace("drive ", "").strip()
+            if len(loc) == 1 and loc.isalpha():
+                base_path = f"{loc.upper()}:\\"
+            elif loc.endswith(":"):
+                base_path = loc.upper() + "\\"
+            else:
+                base_path = location
+        else:
+            base_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        
+        # Ensure valid path
+        if not os.path.exists(base_path):
+             os.makedirs(base_path, exist_ok=True)
+
+        # Ensure extension
+        if "." not in file_name:
+            file_name += ".txt"
+            
+        file_path = os.path.join(base_path, file_name)
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+            
+        print(f"Created file: {file_path}")
+        return True
+    except Exception as e:
+        print(f"Error creating file: {e}")
+        return False
+
+def open_calculator() -> bool:
+    """Opens the Windows Calculator."""
+    try:
+        subprocess.Popen("calc", shell=True)
+        return True
+    except Exception as e:
+        print(f"Error opening calculator: {e}")
+        return False
+
+def get_current_date_time(format_str: str = "both") -> str:
+    """Returns current date, time, or both."""
+    from datetime import datetime
+    now = datetime.now()
+    if format_str == "time":
+        return now.strftime("%I:%M %p")
+    elif format_str == "date":
+        return now.strftime("%A, %B %d, %Y")
+    else:
+        return now.strftime("%A, %B %d, %Y %I:%M %p")
+
+# ========================
+# APP CONTROL (Migrated from FunctionExecutor)
+# ========================
+
+def open_application(app_name: str) -> bool:
+    """Opens an application by name with support for Store apps and URLs."""
+    import os
+    import subprocess
+    import webbrowser
+    
+    app_name = app_name.lower().strip()
+    
+    # Map common app names to executables/commands
+    # Format: app_name -> (executable, is_store_app)
+    app_map = {
+        "chrome": ("chrome", False),
+        "google chrome": ("chrome", False),
+        "firefox": ("firefox", False),
+        "edge": ("msedge", False),
+        "microsoft edge": ("msedge", False),
+        "notepad": ("notepad", False),
+        "calculator": ("calc", False),
+        "calc": ("calc", False),
+        "paint": ("mspaint", False),
+        "word": ("winword", False),
+        "excel": ("excel", False),
+        "powerpoint": ("powerpnt", False),
+        "cmd": ("cmd", False),
+        "command prompt": ("cmd", False),
+        "terminal": ("wt", False),
+        "powershell": ("powershell", False),
+        "settings": ("ms-settings:", True),
+        "control panel": ("control", False),
+        "task manager": ("taskmgr", False),
+        "spotify": ("spotify", True),
+        "vscode": ("code", False),
+        "vs code": ("code", False),
+        "visual studio code": ("code", False),
+        "whatsapp": ("whatsapp", True),
+        "telegram": ("telegram", True),
+        "discord": ("discord", False),
+        "slack": ("slack", False),
+        "vlc": ("vlc", False),
+        "zoom": ("zoom", False),
+        "yt": ("https://www.youtube.com", False),
+        "youtube": ("https://www.youtube.com", False),
+    }
+    
+    app_info = app_map.get(app_name, (app_name, False))
+    executable, is_store_app = app_info
+    
+    try:
+        if executable.startswith("http"):
+             webbrowser.open(executable)
+             print(f"Opened URL: {executable}")
+             return True
+
+        if executable.startswith("ms-"):
+            # Windows URI scheme
+            os.system(f'start "" "{executable}"')
+            print(f"Launched {app_name}")
+            return True
+        
+        if is_store_app:
+            # Try multiple methods for store apps
+            # Method 1: Use start command with app name
+            result = os.system(f'start "" "{executable}:"')
+            if result == 0:
+                print(f"Launched {app_name}")
+                return True
+            
+            # Method 2: Try explorer shell:AppsFolder (Specific for Spotify)
+            if executable == "spotify":
+                 subprocess.run(
+                    f'explorer.exe shell:AppsFolder\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify',
+                    shell=True
+                )
+                 
+            # Method 3: Web fallback for Spotify
+            if executable == "spotify":
+                webbrowser.open("https://open.spotify.com")
+                print(f"Opened Spotify Web Player")
+                return True
+            
+            print(f"Launched {app_name}")
+            return True
+        
+        # Regular apps - try start command first
+        result = os.system(f'start "" "{executable}"')
+        if result == 0:
+            print(f"Launched {app_name}")
+            return True
+        
+        # Fallback: direct execution
+        subprocess.Popen(executable, shell=True)
+        print(f"Launched {app_name}")
+        return True
+        
+    except Exception as e:
+        print(f"Failed to open {app_name}: {e}")
+        return False
+
+def close_application(app_name: str) -> bool:
+    """Closes an application by name."""
+    import subprocess
+    app_name = app_name.lower().strip()
+    try:
+        subprocess.run(f'taskkill /IM {app_name}.exe /F', shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"Closed {app_name}")
+        return True
+    except:
+        try:
+            subprocess.run(f'taskkill /FI "WINDOWTITLE eq {app_name}*" /F', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"Closed {app_name} via window title")
+            return True
+        except Exception as e:
+            print(f"Failed to close {app_name}: {e}")
+            return False
+
+def adjust_system_volume(change: int) -> bool:
+    """Adjusts system volume by a relative amount."""
+    try:
+        current = get_current_volume()
+        new_level = max(0, min(100, current + change))
+        return set_system_volume(new_level)
+    except Exception as e:
+        print(f"Error adjusting volume: {e}")
+        return False
+
+def get_current_time() -> str:
+    """
+    Returns the current date and time formatted as a string.
+    
+    Returns:
+        Formatted date time string "YYYY-MM-DD HH:MM:SS"
+    """
+    import datetime
+    now = datetime.datetime.now()
+    return now.strftime("%Y-%m-%d %H:%M:%S")

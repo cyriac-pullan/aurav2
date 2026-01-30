@@ -14,6 +14,7 @@ google-genai>=0.2.0
 # AURA v2 Dependencies
 rapidfuzz>=3.0.0           # Fuzzy string matching for intent routing
 PyQt5>=5.15.0              # Widget UI
+supermemory>=0.2.0         # Long-term memory + skill sharing
 
 # Optional: Offline voice (install manually if needed)
 # vosk>=0.3.45             # Offline speech recognition

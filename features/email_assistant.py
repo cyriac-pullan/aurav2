@@ -39,7 +39,7 @@ class EmailAssistant:
         """Lazy load AI client"""
         if self._ai_client is None:
             try:
-                from ai_client import ai_client
+                from ai.client import ai_client
                 self._ai_client = ai_client
             except ImportError as e:
                 print(f"[Email] AI client not available: {e}")
@@ -77,7 +77,7 @@ TONE: {tone}
 
         # Get user name from config
         try:
-            from user_config import get_user_name
+            from config.user_config import get_user_name
             user_name = get_user_name()
         except ImportError:
             user_name = "User"

@@ -1,3 +1,8 @@
+# =============================================================================
+# SINGLE PYTHON exec() BOUNDARY
+# All dynamic code execution (exec()) MUST happen in this module only.
+# =============================================================================
+
 import ast
 import sys
 import io
@@ -6,7 +11,7 @@ import threading
 import time
 import logging
 from typing import Dict, Any, Optional, List, Tuple
-from config import config
+from config.config import config
 
 class CodeValidator:
     """Validates Python code for security before execution"""
@@ -139,6 +144,39 @@ class SafeExecutor:
             return False, output, None
         
         return True, output, result
+
+    def execute_and_return_context(
+        self, code: str, context: Dict[str, Any] = None
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        Execute code and return the execution namespace (for loading definitions).
+        Returns: (success, output/error, exec_context with defined names).
+        Use this when callers need to access functions/variables defined in code.
+        """
+        is_valid, validation_msg = self.validator.validate(code)
+        if not is_valid:
+            return False, f"Validation failed: {validation_msg}", {}
+
+        import builtins
+        exec_context = {
+            "__builtins__": builtins.__dict__.copy(),
+            "__name__": "__main__",
+        }
+        if context:
+            exec_context.update(context)
+
+        output_buffer = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(
+                output_buffer
+            ):
+                exec(code, exec_context)
+        except Exception as e:
+            output_buffer.write(f"Execution error: {e}")
+            return False, output_buffer.getvalue(), {}
+
+        return True, output_buffer.getvalue(), exec_context
+
 
 # Global executor instance
 executor = SafeExecutor()

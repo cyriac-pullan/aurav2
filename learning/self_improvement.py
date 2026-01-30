@@ -6,10 +6,21 @@ import sys
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
 
-from ai_client import ai_client
-from capability_manager import capability_manager
-from code_executor import executor
-from config import config
+from ai.client import ai_client
+from learning.capability_manager import capability_manager
+from ai.code_executor import executor
+from config.config import config
+
+# ========================
+# ARCHITECTURAL LAW: SELF-HEALING AUTHORITY
+# ========================
+# This module is the SOLE authority for:
+# 1. Execution Failure Handling & Retries
+# 2. Pip Package Auto-Installation
+# 3. Code Auto-Fixing
+#
+# DO NOT implement these features in Agents or Executors.
+# ========================
 
 class SelfImprovementEngine:
     """Advanced self-improvement system that learns and adapts"""
@@ -641,40 +652,39 @@ class SelfImprovementEngine:
         
         # Import system utilities
         try:
-            import windows_system_utils
+            from utils import windows_system as windows_system_utils
             for attr_name in dir(windows_system_utils):
                 if not attr_name.startswith('_'):
                     context[attr_name] = getattr(windows_system_utils, attr_name)
         except Exception as e:
             logging.warning(f"Could not import system utilities: {e}")
+
         
         # Load dynamically generated capabilities
         try:
             capabilities_count = len(capability_manager.capabilities)
             logging.info(f"Self-improvement: Loading {capabilities_count} capabilities into execution context")
             
-            # Get all capabilities from capability manager
+            # Get all capabilities from capability manager (execution via single authority)
+            from ai.code_executor import executor as code_executor
             for capability_name, capability_data in capability_manager.capabilities.items():
                 try:
-                    # Execute the function code to make it available in context
                     function_code = capability_data.get("code", "")
                     if function_code:
-                        # Create a temporary execution environment to define the function
-                        temp_context = context.copy()
-                        # Add builtins to temp context for proper execution
-                        import builtins
-                        temp_context['__builtins__'] = builtins.__dict__.copy()
-                        exec(function_code, temp_context)
-                        
-                        # Extract the function from the temporary context and add to main context
+                        success, _output, exec_context = code_executor.execute_and_return_context(
+                            function_code, context.copy()
+                        )
+                        if not success:
+                            logging.warning(f"Could not execute capability {capability_name}")
+                            continue
+                        # Extract the function from the returned context and add to main context
                         function_loaded = False
-                        for name, value in temp_context.items():
-                            if not name.startswith('_') and callable(value) and name == capability_name:
+                        for name, value in exec_context.items():
+                            if not name.startswith("_") and callable(value) and name == capability_name:
                                 context[capability_name] = value
                                 logging.info(f"Self-improvement: Successfully loaded capability {capability_name}")
                                 function_loaded = True
                                 break
-                        
                         if not function_loaded:
                             logging.warning(f"Self-improvement: Could not find function {capability_name} after execution")
                     else:

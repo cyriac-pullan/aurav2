@@ -6,15 +6,30 @@ import inspect
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
-from config import config
+from config.config import config
+
+# Lazy import to avoid circular dependencies
+_memory_manager = None
+
+def _get_memory_manager():
+    """Lazy load memory manager"""
+    global _memory_manager
+    if _memory_manager is None:
+        try:
+            from learning.memory_manager import get_memory_manager
+            _memory_manager = get_memory_manager()
+        except Exception as e:
+            logging.debug(f"Memory manager not available: {e}")
+    return _memory_manager
+
 
 class CapabilityManager:
-    """Manages dynamic capabilities and self-improvement"""
+    """Manages dynamic capabilities, self-improvement, and skill sharing"""
     
     def __init__(self):
         self.capabilities_file = Path(config.capabilities_file)
         self.learning_file = Path(config.learning_file)
-        self.utils_module_path = Path("agent/windows_system_utils.py")
+        self.utils_module_path = Path(__file__).parent.parent / "utils" / "windows_system.py"
         
         # Load existing capabilities and learning data
         self.capabilities = self._load_capabilities()
@@ -106,7 +121,6 @@ class CapabilityManager:
             # Add to utils module
             self._add_to_utils_module(function_code, command)
             
-            # Record in learning data
             self.learning_data["generated_functions"].append({
                 "function_name": func_name,
                 "command": command,
@@ -114,6 +128,12 @@ class CapabilityManager:
                 "success": success
             })
             self._save_learning_data()
+            
+            # ═══════════════════════════════════════════════════════════════
+            # SKILL SHARING: Sync to Supermemory for other users
+            # ═══════════════════════════════════════════════════════════════
+            if success and config.get('learning.skill_sharing_enabled', True):
+                self._sync_skill_to_cloud(func_name, function_code, command, docstring)
             
             logging.info(f"Added new capability: {func_name}")
             return True
@@ -171,10 +191,10 @@ class CapabilityManager:
         """Reload the utils module to pick up new functions"""
         try:
             import sys
-            if 'windows_system_utils' in sys.modules:
-                importlib.reload(sys.modules['windows_system_utils'])
+            if 'utils.windows_system' in sys.modules:
+                importlib.reload(sys.modules['utils.windows_system'])
             else:
-                import windows_system_utils
+                from utils import windows_system
         except Exception as e:
             logging.error(f"Error reloading utils module: {e}")
     
@@ -259,6 +279,96 @@ class CapabilityManager:
         """Determine if we should attempt to improve capabilities - ALWAYS ENABLED"""
         # Always attempt improvement for any failure
         return True
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SKILL SHARING METHODS
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def _sync_skill_to_cloud(self, func_name: str, code: str, command: str, 
+                              description: str = "") -> bool:
+        """
+        Sync a learned skill to Supermemory for sharing with other users.
+        
+        Args:
+            func_name: Name of the function
+            code: Python code of the function
+            command: Command that triggered this skill
+            description: What the skill does
+            
+        Returns:
+            True if synced successfully
+        """
+        memory = _get_memory_manager()
+        if memory is None or not memory.is_enabled:
+            logging.debug("Skill sharing disabled - no memory manager")
+            return False
+        
+        try:
+            success = memory.add_skill(
+                skill_name=func_name,
+                code=code,
+                triggers=[command],
+                description=description
+            )
+            if success:
+                logging.info(f"Shared skill to cloud: {func_name}")
+            return success
+        except Exception as e:
+            logging.warning(f"Failed to sync skill to cloud: {e}")
+            return False
+    
+    def find_shared_skill(self, command: str) -> Optional[Dict[str, Any]]:
+        """
+        Search Supermemory for a community-shared skill.
+        
+        Args:
+            command: User command to search for
+            
+        Returns:
+            Skill dict with 'name', 'code', 'triggers' or None
+        """
+        memory = _get_memory_manager()
+        if memory is None or not memory.is_enabled:
+            return None
+        
+        try:
+            skill = memory.search_skill(command)
+            if skill:
+                logging.info(f"Found shared skill: {skill.get('name')} for '{command}'")
+                return skill
+            return None
+        except Exception as e:
+            logging.warning(f"Error searching shared skills: {e}")
+            return None
+    
+    def execute_shared_skill(self, skill: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Execute a shared skill.
+        
+        Args:
+            skill: Skill dict with 'code' key
+            
+        Returns:
+            Tuple of (success, result_message)
+        """
+        if not skill or 'code' not in skill:
+            return False, "Invalid skill data"
+        
+        try:
+            from ai.code_executor import executor as code_executor
+            code = skill["code"]
+            success, output, exec_namespace = code_executor.execute_and_return_context(code)
+            if not success:
+                return False, output or "Execution failed"
+            func_name = skill.get("name")
+            if func_name and func_name in exec_namespace:
+                result = exec_namespace[func_name]()
+                return True, str(result) if result else "Done"
+            return True, "Skill executed"
+        except Exception as e:
+            logging.error(f"Failed to execute shared skill: {e}")
+            return False, str(e)
+
 
 # Global capability manager instance
 capability_manager = CapabilityManager()

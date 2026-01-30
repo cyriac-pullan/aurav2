@@ -44,7 +44,7 @@ class AgenticAppCreator:
         """Lazy load AI client"""
         if self._ai_client is None:
             try:
-                from ai_client import ai_client
+                from ai.client import ai_client
                 self._ai_client = ai_client
             except ImportError as e:
                 print(f"[AppCreator] AI client not available: {e}")
@@ -203,26 +203,31 @@ INSTRUCTIONS:
             # First, check syntax by compiling
             compile(code, temp_path, 'exec')
             
-            # Run with timeout to check imports work
-            # We use a wrapper that exits after imports succeed
+            # Run with timeout to check imports work (all execution via single authority)
+            repo_root = str(Path(__file__).resolve().parent.parent)
             test_wrapper = f'''
 import sys
+import os
 import threading
+
+sys.path.insert(0, r"{repo_root}")
+from ai.code_executor import executor as code_executor
 
 def timeout_exit():
     import time
     time.sleep(2)
-    # If we got here, imports worked and GUI started
-    import os
     os._exit(0)
 
-# Start timeout thread
 t = threading.Thread(target=timeout_exit, daemon=True)
 t.start()
 
-# Run the actual code
 try:
-    exec(open(r"{temp_path}").read())
+    with open(r"{temp_path}", encoding="utf-8") as f:
+        code = f.read()
+    success, out, _ = code_executor.execute(code)
+    if not success:
+        print(out or "Execution failed", file=sys.stderr)
+        sys.exit(1)
 except SystemExit:
     pass
 '''

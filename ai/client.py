@@ -2,7 +2,7 @@ import logging
 import time
 import json
 from typing import Dict, List, Optional, Any
-from config import config
+from config.config import config
 from google import genai
 
 class AIClient:
@@ -181,7 +181,7 @@ except Exception as e:
             
             # Import the function mapping to check for direct matches
             try:
-                from windows_system_utils import get_function_for_command, FUNCTION_MAPPINGS
+                from utils.windows_system import get_function_for_command, FUNCTION_MAPPINGS
                 
                 # Try to find a direct function match
                 func = get_function_for_command(command)
@@ -328,12 +328,12 @@ Respond ONLY with valid JSON, no explanations.
         """Build comprehensive system prompt with current capabilities"""
 
         # Load current capabilities
-        from capability_manager import capability_manager
+        from learning.capability_manager import capability_manager
         capabilities = capability_manager.get_capabilities_summary()
 
         # Load available functions from windows_system_utils
         try:
-            from windows_system_utils import get_function_for_command, list_available_functions, FUNCTION_MAPPINGS
+            from utils.windows_system import get_function_for_command, list_available_functions, FUNCTION_MAPPINGS
             available_functions = list_available_functions()
             function_mappings = FUNCTION_MAPPINGS
         except ImportError:
@@ -614,7 +614,7 @@ Generate code that is safe, robust, and follows these patterns.
         
         # Get the capability names and signatures from capability manager
         try:
-            from capability_manager import capability_manager
+            from learning.capability_manager import capability_manager
             formatted = []
             for capability_name, capability_data in capability_manager.capabilities.items():
                 signature = capability_data.get('signature', capability_name + '()')

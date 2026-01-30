@@ -8,12 +8,21 @@ import logging
 from typing import Optional, Dict, Any, Tuple
 
 # AURA v2 Components
-from local_context import get_context, AuraState, AuraMode
-from response_generator import get_response_generator
-from intent_router import get_intent_router, RouteResult
-from function_executor import get_function_executor
-from wake_word_detector import check_wake_word, extract_command_after_wake
-from capability_manager import capability_manager
+from core.context import get_context, AuraState, AuraMode
+from ui.response_generator import get_response_generator
+from routing.intent_router import get_intent_router, RouteResult
+from routing.function_executor import get_function_executor
+from ui.wake_word import check_wake_word, extract_command_after_wake
+from learning.capability_manager import capability_manager
+from core.hybrid_orchestrator import hybrid_brain
+
+# Memory Manager (optional - graceful degradation if not configured)
+try:
+    from learning.memory_manager import get_memory_manager
+    _memory_available = True
+except ImportError:
+    _memory_available = False
+    def get_memory_manager(): return None
 
 
 class AuraV2Bridge:
@@ -37,6 +46,15 @@ class AuraV2Bridge:
         self.executor = get_function_executor()
         self.capability_mgr = capability_manager  # Track learned capabilities
         
+        # Memory Manager (for long-term memory + skill sharing)
+        self._memory = None
+        if _memory_available:
+            try:
+                self._memory = get_memory_manager()
+                logging.info(f"Memory manager enabled: {self._memory.is_enabled}")
+            except Exception as e:
+                logging.warning(f"Memory manager not available: {e}")
+        
         # Gemini client (lazy load)
         self._ai_client = None
         
@@ -50,8 +68,9 @@ class AuraV2Bridge:
             "gemini_intent": 0,
             "gemini_full": 0,
             "gemini_chat": 0,
+            "shared_skills_used": 0,  # NEW: track shared skill reuse
             "tokens_saved": 0,
-            "capabilities_learned": 0,  # New: track learned functions
+            "capabilities_learned": 0,
         }
         
         logging.info("AuraV2Bridge initialized with conversational butler mode and capability learning")
@@ -61,7 +80,7 @@ class AuraV2Bridge:
         """Lazy load AI client"""
         if self._ai_client is None:
             try:
-                from ai_client import ai_client
+                from ai.client import ai_client
                 self._ai_client = ai_client
             except Exception as e:
                 logging.error(f"Could not load AI client: {e}")
@@ -101,28 +120,9 @@ class AuraV2Bridge:
             return self._handle_conversation(command)
         
         # ═══════════════════════════════════════════════════════════════
-        # v2.1 UNIFIED ROUTING: Try local first, ALWAYS fallback to LLM
-        # This restores v1-like behavior where any command can work
+        # v2.5 HYBRID ROUTING: Fast Local -> Agentic Planning -> Learning
         # ═══════════════════════════════════════════════════════════════
-        
-        # If we have a function match (any confidence), try local first
-        if route_result.function and route_result.confidence >= 0.50:
-            logging.info(f"Trying local execution: {route_result.function}")
-            result = self._execute_local(route_result)
-            if result[1]:  # success
-                self.stats["local_commands"] += 1
-                self.stats["tokens_saved"] += 500
-                return result
-            else:
-                logging.info(f"Local execution failed, falling back to LLM")
-        
-        # ═══════════════════════════════════════════════════════════════
-        # FALLBACK: Use LLM to generate and execute code (v1 behavior)
-        # This handles ANY command that local routing can't handle
-        # ═══════════════════════════════════════════════════════════════
-        logging.info(f"Using LLM fallback for: {command}")
-        self.stats["gemini_full"] += 1
-        return self._handle_gemini(command, context)
+        return hybrid_brain.process(command, context)
     
     def _execute_local(self, route_result: RouteResult) -> Tuple[str, bool, bool]:
         """Execute command locally (0 tokens)"""
@@ -249,6 +249,16 @@ class AuraV2Bridge:
             else:
                 length_instruction = "\n\nRESPONSE LENGTH: Provide a balanced response - informative but not overly long. 3-5 sentences for simple questions, more for complex topics."
             
+            # Get long-term memory context from Supermemory
+            memory_context = ""
+            if self._memory and self._memory.is_enabled:
+                try:
+                    memory_context = self._memory.build_context_prompt(message)
+                    if memory_context:
+                        memory_context = f"\n\nLONG-TERM MEMORY:\n{memory_context}"
+                except Exception as e:
+                    logging.debug(f"Could not fetch memory context: {e}")
+            
             # Enhanced butler personality prompt
             prompt = f"""You are AURA, an sophisticated AI butler assistant with these characteristics:
 
@@ -271,6 +281,7 @@ CONVERSATION STYLE:
 MEMORY & CONTEXT:
 You remember this conversation:
 {conversation_context}
+{memory_context}
 
 Current user message: {message}
 

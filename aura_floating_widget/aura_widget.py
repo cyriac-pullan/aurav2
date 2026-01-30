@@ -43,11 +43,11 @@ except ImportError:
 
 # Import AURA components
 try:
-    from ai_client import ai_client
-    from code_executor import executor
-    from capability_manager import capability_manager
-    from self_improvement import improvement_engine
-    import windows_system_utils
+    from ai.client import ai_client
+    from ai.code_executor import executor
+    from learning.capability_manager import capability_manager
+    from learning.self_improvement import improvement_engine
+    from utils import windows_system as windows_system_utils
     AURA_AVAILABLE = True
 except ImportError as e:
     AURA_AVAILABLE = False
@@ -74,8 +74,8 @@ VOICE_AVAILABLE = TTS_AVAILABLE  # For backward compatibility
 # AURA v2 - Intelligent Routing (reduces LLM costs by 85%+)
 # ═══════════════════════════════════════════════════════════════════════════════
 try:
-    from aura_v2_bridge import aura_bridge
-    from wake_word_detector import KeywordWakeDetector, check_wake_word, extract_command_after_wake
+    from ui.bridge import aura_bridge
+    from ui.wake_word import KeywordWakeDetector, check_wake_word, extract_command_after_wake
     AURA_V2_AVAILABLE = True
     print("AURA v2 intelligent routing enabled")
 except ImportError as e:
@@ -84,7 +84,7 @@ except ImportError as e:
 
 # TTS Manager for proper voice output
 try:
-    from tts_manager import get_tts_manager, speak as tts_speak, speak_chunked
+    from utils.tts_manager import get_tts_manager, speak as tts_speak, speak_chunked
     TTS_MANAGER_AVAILABLE = True
     print("TTS Manager loaded")
 except ImportError:
@@ -99,7 +99,7 @@ class AuraPersonality:
     def __init__(self):
         # Load user name from persistent config
         try:
-            from user_config import get_user_name
+            from config.user_config import get_user_name
             self.user_name = get_user_name()
         except ImportError:
             self.user_name = "User"
