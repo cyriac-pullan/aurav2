@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Tuple, Optional
 from datetime import datetime
 
-# App output directory
-APPS_DIR = Path.home() / "Desktop" / "AURA_Apps"
+# App output directory (Desktop on Windows, safe fallback elsewhere)
+_desktop_dir = Path.home() / "Desktop"
+APPS_DIR = (_desktop_dir if _desktop_dir.exists() else Path.home()) / "AURA_Apps"
 
 
 class AgenticAppCreator:
@@ -36,8 +37,8 @@ class AgenticAppCreator:
     def __init__(self):
         self._ai_client = None
         
-        # Ensure apps directory exists
-        APPS_DIR.mkdir(exist_ok=True)
+        # Ensure apps directory exists even when Desktop is missing
+        APPS_DIR.mkdir(parents=True, exist_ok=True)
     
     @property
     def ai_client(self):
