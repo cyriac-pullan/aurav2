@@ -14,6 +14,8 @@ we return a clear "I don't have information about that" - not LLM fabrication.
 import logging
 from typing import Dict, Any, List
 
+from core.branding import assistant_name
+
 
 def handle_information(user_input: str, context: Dict[str, Any], llm) -> Dict[str, Any]:
     """Generate response from context facts - no tool execution.
@@ -158,7 +160,7 @@ def _generate_response_from_facts(user_input: str, question_type: str, facts: Di
         return _get_capabilities_response(), True
     
     if question_type == "identity":
-        return "I'm AURA, an intelligent desktop assistant. I can control your system, manage windows, adjust settings, and answer questions about your computer.", True
+        return f"I'm {assistant_name()}, an intelligent desktop assistant. I can control your system, manage windows, adjust settings, and answer questions about your computer.", True
     
     return "I can only answer questions about your system state. For general knowledge, I don't have that capability yet.", False
 

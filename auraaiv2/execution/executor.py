@@ -291,10 +291,27 @@ class ToolExecutor:
     
     def _check_preconditions(self, tool: Tool) -> Dict[str, Any]:
         """Enforce tool preconditions. Returns satisfied/reason/failed_check."""
-        import win32gui
-        import win32process
-        import psutil
-        
+        requires_window_introspection = (
+            tool.requires_unlocked_screen
+            or tool.requires_focus
+            or bool(tool.requires_active_app)
+        )
+
+        # Fast return for tools that don't require focus/window preconditions.
+        if not requires_window_introspection:
+            return {"satisfied": True}
+
+        try:
+            import win32gui
+            import win32process
+            import psutil
+        except ImportError as e:
+            return {
+                "satisfied": False,
+                "reason": f"Precondition checks unavailable in this environment: {e}",
+                "failed_check": "environment_dependencies"
+            }
+
         # Check 1: Unlocked screen (most restrictive)
         if tool.requires_unlocked_screen:
             hwnd = win32gui.GetForegroundWindow()

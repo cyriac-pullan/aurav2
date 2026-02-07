@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AURA - Agentic Desktop Assistant
+"""OpenClaw/AURA - Agentic Desktop Assistant
 
 New entry point - uses agentic loop instead of code generation
 """
@@ -19,10 +19,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Load runtime mode at startup
 from core.runtime import get_runtime_mode
+from core.branding import assistant_name
 
 if __name__ == "__main__":
     runtime_mode = get_runtime_mode()
-    print(f"Runtime mode: {runtime_mode}\n")
+    print(f"{assistant_name()} runtime mode: {runtime_mode}\n")
     
     from core.assistant import main
     sys.exit(main())

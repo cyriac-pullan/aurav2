@@ -116,8 +116,25 @@ class ToolLoader:
                 if obj.__module__ != module_name:
                     continue
                 
-                # Instantiate the tool
+                # Instantiate only no-arg Tool subclasses.
                 try:
+                    sig = inspect.signature(obj)
+                    required = [
+                        p for p in sig.parameters.values()
+                        if p.name != "self"
+                        and p.default is inspect.Parameter.empty
+                        and p.kind in (
+                            inspect.Parameter.POSITIONAL_ONLY,
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                            inspect.Parameter.KEYWORD_ONLY,
+                        )
+                    ]
+                    if required:
+                        logging.debug(
+                            f"Skipping {name} from {module_name}: requires constructor args"
+                        )
+                        continue
+
                     tool_instance = obj()
                     if isinstance(tool_instance, Tool):
                         tools.append(tool_instance)
