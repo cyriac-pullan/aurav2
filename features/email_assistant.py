@@ -31,8 +31,10 @@ class EmailAssistant:
     
     def __init__(self):
         self._ai_client = None
-        self.drafts_dir = Path.home() / "Documents" / "AURA_Drafts"
-        self.drafts_dir.mkdir(exist_ok=True)
+        documents_dir = Path.home() / "Documents"
+        base_dir = documents_dir if documents_dir.exists() else Path.home()
+        self.drafts_dir = base_dir / "AURA_Drafts"
+        self.drafts_dir.mkdir(parents=True, exist_ok=True)
     
     @property
     def ai_client(self):

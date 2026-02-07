@@ -18,14 +18,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 if str(_repo_root / "auraaiv2") not in sys.path:
-    sys.path.insert(0, str(_repo_root / "auraaiv2"))
-
-try:
-    import config.config
-    print("DEBUG: config.config imported successfully")
-    print("DEBUG: config object:", config.config.config)
-except ImportError as e:
-    print(f"DEBUG: Failed to import config.config: {e}")
+    sys.path.append(str(_repo_root / "auraaiv2"))
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 

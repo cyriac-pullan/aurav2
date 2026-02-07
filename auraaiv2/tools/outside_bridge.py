@@ -178,6 +178,52 @@ def register_outside_tools():
         except Exception as e:
             logging.warning(f"Could not register run_python: {e}")
 
+    # Baseline cross-platform fallbacks for core assistant checks
+    # Keep fast-path verification and simple assistant queries functional
+    # even when Windows-specific utilities are unavailable.
+    if not WSU_AVAILABLE:
+        from datetime import datetime
+
+        class FallbackCurrentTimeTool(Tool):
+            @property
+            def name(self): return "get_current_time"
+            @property
+            def description(self): return "Get current local date/time (fallback)."
+            @property
+            def schema(self): return {"type": "object", "properties": {}}
+            @property
+            def risk_level(self): return "low"
+            @property
+            def requires_unlocked_screen(self): return False
+            def execute(self, args):
+                return {
+                    "status": "success",
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "source": "fallback"
+                }
+
+        class FallbackSystemVolumeTool(Tool):
+            @property
+            def name(self): return "get_system_volume"
+            @property
+            def description(self): return "Get system volume (fallback unavailable on non-Windows)."
+            @property
+            def schema(self): return {"type": "object", "properties": {}}
+            @property
+            def risk_level(self): return "low"
+            @property
+            def requires_unlocked_screen(self): return False
+            def execute(self, args):
+                return {
+                    "status": "error",
+                    "error": "System volume is unavailable in this environment (fallback tool)."
+                }
+
+        if not registry.has("get_current_time"):
+            registry.register(FallbackCurrentTimeTool())
+        if not registry.has("get_system_volume"):
+            registry.register(FallbackSystemVolumeTool())
+
     # 2. Register System Tools (utils/windows_system.py)
     if WSU_AVAILABLE:
         # Format: (name, desc, props, risk, requires_unlocked)
@@ -279,25 +325,43 @@ def register_outside_tools():
                 creator = app_creator.AgenticAppCreator()
                 success, msg, path = creator.create_app(args["description"])
                 return {"status": "success" if success else "error", "message": msg, "path": path}
-        
-        registry.register(AppCreatorTool())
+
+        if not registry.has("create_agentic_app"):
+            registry.register(AppCreatorTool())
 
     if EMAIL_AVAILABLE:
-        # features/email_assistant.py: draft_email(instruction, recipient...)
+        # features/email_assistant.py exposes a module-level helper:
+        # draft_email(instruction, recipient=None, tone='professional', action='clipboard')
         class EmailDraftTool(Tool):
             @property
             def name(self): return "draft_email_agent" # distinct from intent name
             @property
             def description(self): return "Draft an email."
             @property
-            def schema(self): return {"type": "object", "properties": {"instruction": {"type": "string"}, "recipient": {"type": "string"}}, "required": ["instruction"]}
+            def schema(self):
+                return {
+                    "type": "object",
+                    "properties": {
+                        "instruction": {"type": "string"},
+                        "recipient": {"type": "string"},
+                        "tone": {"type": "string"},
+                        "action": {"type": "string"}
+                    },
+                    "required": ["instruction"]
+                }
             @property
             def risk_level(self): return "medium"
             def execute(self, args):
-                success, msg = email_assistant.draft_email(args["instruction"], args.get("recipient", ""), action="clipboard")
+                success, msg = email_assistant.draft_email(
+                    args["instruction"],
+                    args.get("recipient", ""),
+                    args.get("tone", "professional"),
+                    args.get("action", "clipboard")
+                )
                 return {"status": "success" if success else "error", "message": msg}
-        
-        registry.register(EmailDraftTool())
+
+        if not registry.has("draft_email_agent"):
+            registry.register(EmailDraftTool())
     
     logging.info("Outside tools registration complete.")
 
